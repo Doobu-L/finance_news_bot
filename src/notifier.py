@@ -40,28 +40,56 @@ class TelegramNotifier:
                 
                 # Send remaining
                 if chunk:
-                    await bot.send_message(chat_id=self.chat_id, text=chunk, parse_mode='Markdown')
+                    return await bot.send_message(chat_id=self.chat_id, text=chunk, parse_mode='Markdown')
                     
         except Exception as e:
             print(f"Failed to send Telegram message: {e}")
-            # Fallback: Try sending without markdown if it fails (e.g. unclosed entities in a split, though line split minimizes this)
+            # Fallback
             try:
                 print("Retrying without Markdown...")
-                await bot.send_message(chat_id=self.chat_id, text=text[:4000], parse_mode=None)
+                return await bot.send_message(chat_id=self.chat_id, text=text[:4000], parse_mode=None)
             except Exception as e2:
                 print(f"Fallback failed: {e2}")
+                return None
+
+    async def edit_message(self, message_id, text):
+        """
+        Edit an existing message.
+        """
+        if not self.token or not self.chat_id:
+            return
+
+        bot = Bot(token=self.token)
+        try:
+            await bot.edit_message_text(chat_id=self.chat_id, message_id=message_id, text=text, parse_mode='Markdown')
+        except Exception as e:
+            print(f"Failed to edit message {message_id}: {e}")
+            # If edit fails (e.g. content same, or too old), we might need to handle it.
+            # But usually we just let it fail and maybe send new?
+
+    def edit_message_sync(self, message_id, text):
+        try:
+            asyncio.run(self.edit_message(message_id, text))
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.edit_message(message_id, text))
+            loop.close()
 
     def send_message_sync(self, text):
         """
         Wrapper to run async send_message from synchronous code.
+        Returns the message object (or at least we need the ID). 
+        Wait, send_message doesn't return ID currently. We need to fix that.
         """
         try:
-            asyncio.run(self.send_message(text))
+            return asyncio.run(self.send_message(text))
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.send_message(text))
+            result = loop.run_until_complete(self.send_message(text))
             loop.close()
+            return result
         try:
             asyncio.run(self.send_message(text))
         except RuntimeError:
